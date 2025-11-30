@@ -3,7 +3,6 @@ import yfinance as yf
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import io
 
 # ---------------------------------------------------------
 # 頁面設定
@@ -25,7 +24,7 @@ def get_empty_df():
     })
 
 # ---------------------------------------------------------
-# 2. 初始化 Session State
+# 2. 初始化 Session State (空白模板)
 # ---------------------------------------------------------
 if 'broker_1' not in st.session_state:
     st.session_state.broker_1 = get_empty_df()
@@ -37,12 +36,12 @@ if 'broker_3' not in st.session_state:
     st.session_state.broker_3 = get_empty_df()
 
 # ---------------------------------------------------------
-# 3. 側邊欄：存檔與讀檔區 (新功能)
+# 3. 側邊欄：存檔與讀檔區
 # ---------------------------------------------------------
 st.sidebar.header("💾 存檔與讀檔")
-st.sidebar.caption("由於沒有登入系統，請將設定檔下載至您的電腦以保存資料。")
+st.sidebar.caption("請將設定檔下載至電腦以保存資料。")
 
-# --- 讀檔功能 ---
+# --- 讀檔功能 (含自動刷新) ---
 uploaded_file = st.sidebar.file_uploader("📂 讀取舊檔案 (Upload CSV)", type=['csv'])
 
 if uploaded_file is not None:
@@ -57,14 +56,16 @@ if uploaded_file is not None:
             st.session_state.broker_1 = df_uploaded[df_uploaded['Broker_ID'] == 'A'][["代號", "股數", "平均成本", "Beta (自訂)"]].reset_index(drop=True)
             st.session_state.broker_2 = df_uploaded[df_uploaded['Broker_ID'] == 'B'][["代號", "股數", "平均成本", "Beta (自訂)"]].reset_index(drop=True)
             st.session_state.broker_3 = df_uploaded[df_uploaded['Broker_ID'] == 'C'][["代號", "股數", "平均成本", "Beta (自訂)"]].reset_index(drop=True)
-            st.sidebar.success("✅ 讀檔成功！資料已還原。")
+            
+            st.sidebar.success("✅ 讀檔成功！正在刷新圖表...")
+            # 強制刷新頁面，讓圖表立即顯示
+            st.rerun()
         else:
             st.sidebar.error("❌ 檔案格式錯誤，請使用本系統產出的 CSV。")
     except Exception as e:
         st.sidebar.error(f"讀取失敗: {e}")
 
-# --- 存檔功能 ---
-# 將三個券商的資料合併成一個 CSV 供下載
+# --- 存檔功能 (含亂碼修復) ---
 def convert_df_to_csv():
     b1 = st.session_state.broker_1.copy()
     b1['Broker_ID'] = 'A'
@@ -79,7 +80,8 @@ def convert_df_to_csv():
     full_df = pd.concat([b1, b2, b3], ignore_index=True)
     full_df = full_df[full_df['代號'].notna() & (full_df['代號'] != "")]
     
-    return full_df.to_csv(index=False).encode('utf-8')
+    # 【關鍵修正】使用 'utf-8-sig' 編碼，解決 Excel 中文亂碼問題
+    return full_df.to_csv(index=False).encode('utf-8-sig')
 
 csv_data = convert_df_to_csv()
 
@@ -112,8 +114,6 @@ with st.sidebar.expander("📂 券商 C"):
     edited_b3 = st.data_editor(st.session_state.broker_3, num_rows="dynamic", column_config=columns_config, key="ed_b3", hide_index=True)
 
 if st.sidebar.button("🔄 更新分析結果"):
-    # 這裡不需要特別做什麼，因為 data_editor 會自動更新 session_state
-    # 但為了確保重新執行以刷新圖表，保留 rerun
     st.rerun()
 
 # ---------------------------------------------------------
@@ -121,7 +121,6 @@ if st.sidebar.button("🔄 更新分析結果"):
 # ---------------------------------------------------------
 def fetch_risk_data(df_list):
     results = []
-    # 過濾掉空的 DataFrame
     valid_dfs = [df for df in df_list if not df.empty]
     total_rows = sum([len(df) for df in valid_dfs])
     
@@ -216,7 +215,7 @@ stock_data = fetch_risk_data(data_sources)
 if stock_data:
     raw_df = pd.DataFrame(stock_data)
     
-    # 聚合計算
+    # 聚合計算 (合併相同股票)
     grouped_df = raw_df.groupby(['Ticker', 'Sector'], as_index=False).agg({
         'MarketValue': 'sum',
         'RiskExposure': 'sum',
@@ -239,6 +238,7 @@ if stock_data:
     else:
         portfolio_beta = 0
 
+    # 上半部：儀表 + 圓餅 + 數據
     c1, c2, c3 = st.columns([1, 1.2, 1])
     
     with c1:
@@ -261,8 +261,9 @@ if stock_data:
 
     st.divider()
 
+    # 下半部：風險權重矩陣
     st.subheader("🔥 全局風險矩陣 (面積大小 = 風險當量)")
-    st.caption("若要保存目前的輸入，請使用左側的「💾 存檔與讀檔」功能。")
+    st.caption("矩陣圖顯示：方塊越 **大** 代表風險權重越高；越 **紅** 代表 Beta 波動越大。")
 
     fig_tree = px.treemap(
         grouped_df,
@@ -290,10 +291,15 @@ if stock_data:
     st.plotly_chart(fig_tree, use_container_width=True)
 
 else:
-    st.info("👋 歡迎使用風險監控面板！")
+    # 歡迎畫面
+    st.info("👋 歡迎使用風險監控面板！請在左側側邊欄輸入資料，或讀取舊的 CSV 檔案。")
     st.markdown("""
-    **如何保存我的資料？**
-    1. 在左側輸入您的股票資料。
-    2. 輸入完畢後，點擊左側上方的 **「💾 下載目前設定」** 按鈕，這會下載一個 `.csv` 檔案到您的電腦。
-    3. **下次使用時**：將該 `.csv` 檔案拖曳到左側的 **「📂 讀取舊檔案」** 框框中，您的持倉就會自動還原了！
+    **快速開始：**
+    1. 展開左側的 **📂 券商資料夾**。
+    2. 在表格中輸入 **代號** 與 **股數**。
+    3. 點擊 **🔄 更新分析結果**。
+    
+    **如何保存？**
+    *   使用左側上方的 **「💾 下載目前設定」** 可將資料存回電腦。
+    *   下次使用時，直接拖曳該檔案至 **「📂 讀取舊檔案」** 即可還原。
     """)
