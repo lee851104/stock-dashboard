@@ -31,12 +31,11 @@ if 'broker_3' not in st.session_state:
     st.session_state.broker_3 = get_empty_df()
 
 # ---------------------------------------------------------
-# 2. 側邊欄佈局：建立容器 (關鍵修改！)
+# 2. 側邊欄佈局：建立容器
 # ---------------------------------------------------------
 st.sidebar.header("💾 存檔與讀檔")
 st.sidebar.caption("請將設定檔下載至電腦以保存資料。")
 
-# 【關鍵 1】先建立一個「空的容器」放在最上面，稍後再把下載按鈕放進來
 download_container = st.sidebar.container()
 
 # 讀檔功能
@@ -60,7 +59,7 @@ st.sidebar.markdown("---")
 st.sidebar.header("📝 持倉編輯")
 
 # ---------------------------------------------------------
-# 3. 持倉編輯區 (先執行這裡，獲取最新數據)
+# 3. 持倉編輯區 (已加入 hide_index=True)
 # ---------------------------------------------------------
 columns_config = {
     "代號": st.column_config.TextColumn(help="股票代碼"),
@@ -70,17 +69,34 @@ columns_config = {
 }
 
 with st.sidebar.expander("📂 券商 A", expanded=True):
-    # 【關鍵 2】直接捕捉編輯後的 DataFrame (edited_b1)
-    edited_b1 = st.data_editor(st.session_state.broker_1, num_rows="dynamic", column_config=columns_config, key="ed_b1", hide_index=True)
-    # 立即更新 Session State，確保資料同步
+    # 【修改重點】加入了 hide_index=True
+    edited_b1 = st.data_editor(
+        st.session_state.broker_1, 
+        num_rows="dynamic", 
+        column_config=columns_config, 
+        key="ed_b1", 
+        hide_index=True  # <--- 這裡！把索引隱藏起來
+    )
     st.session_state.broker_1 = edited_b1
 
 with st.sidebar.expander("📂 券商 B"):
-    edited_b2 = st.data_editor(st.session_state.broker_2, num_rows="dynamic", column_config=columns_config, key="ed_b2", hide_index=True)
+    edited_b2 = st.data_editor(
+        st.session_state.broker_2, 
+        num_rows="dynamic", 
+        column_config=columns_config, 
+        key="ed_b2", 
+        hide_index=True  # <--- 這裡也隱藏
+    )
     st.session_state.broker_2 = edited_b2
 
 with st.sidebar.expander("📂 券商 C"):
-    edited_b3 = st.data_editor(st.session_state.broker_3, num_rows="dynamic", column_config=columns_config, key="ed_b3", hide_index=True)
+    edited_b3 = st.data_editor(
+        st.session_state.broker_3, 
+        num_rows="dynamic", 
+        column_config=columns_config, 
+        key="ed_b3", 
+        hide_index=True  # <--- 這裡也隱藏
+    )
     st.session_state.broker_3 = edited_b3
 
 # 🔄 更新按鈕
@@ -88,7 +104,7 @@ if st.sidebar.button("🔄 更新分析結果"):
     st.rerun()
 
 # ---------------------------------------------------------
-# 4. 準備 CSV 並放入最上方的容器 (關鍵步驟！)
+# 4. 準備 CSV 並放入最上方的容器
 # ---------------------------------------------------------
 def convert_df_to_csv(b1, b2, b3):
     d1 = b1.copy(); d1['Broker_ID'] = 'A'
@@ -96,15 +112,11 @@ def convert_df_to_csv(b1, b2, b3):
     d3 = b3.copy(); d3['Broker_ID'] = 'C'
     
     full_df = pd.concat([d1, d2, d3], ignore_index=True)
-    # 過濾空行
     full_df = full_df[full_df['代號'].notna() & (full_df['代號'] != "")]
-    # 編碼 utf-8-sig
     return full_df.to_csv(index=False).encode('utf-8-sig')
 
-# 【關鍵 3】現在我們有了最新的 edited_b1, b2, b3，這時候產生的 CSV 才是最新的
 csv_data = convert_df_to_csv(edited_b1, edited_b2, edited_b3)
 
-# 【關鍵 4】使用 'with download_container' 把按鈕放回最上面
 with download_container:
     st.download_button(
         label="💾 下載目前設定 (Save to CSV)",
@@ -114,7 +126,7 @@ with download_container:
     )
 
 # ---------------------------------------------------------
-# 5. 數據處理與繪圖 (維持不變)
+# 5. 數據處理與繪圖
 # ---------------------------------------------------------
 def fetch_risk_data(df_list):
     results = []
@@ -285,10 +297,10 @@ if stock_data:
     st.plotly_chart(fig_tree, use_container_width=True)
 
 else:
-    st.info("👋 歡迎使用風險監控面板！請在左側輸入資料。")
+    st.info("👋 歡迎使用風險監控面板！")
     st.markdown("""
-    **資料保存指南：**
-    1. 在左側輸入您的持倉。
-    2. **重要：** 輸入完畢後，請點擊一下表格外的任意處，或按 **🔄 更新分析結果**。
-    3. 最後再點擊左上方的 **「💾 下載目前設定」**，此時下載的檔案就會包含您剛剛輸入的內容了！
+    **如何新增股票？**
+    1. 點擊左側「📂 券商資料夾」。
+    2. 點擊表格下方灰色的列（或按 `+`），直接輸入代號與股數。
+    3. 那個數字 1, 2, 3 的索引欄位已經隱藏囉！
     """)
