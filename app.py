@@ -13,7 +13,7 @@ st.markdown("支援 **存檔與讀檔** 功能，請在左側側邊欄進行操�
 st.markdown("---")
 
 # ---------------------------------------------------------
-# 1. 輔助函數：資料結構定義
+# 1. 輔助函數與初始化
 # ---------------------------------------------------------
 def get_empty_df():
     return pd.DataFrame({
@@ -23,101 +23,98 @@ def get_empty_df():
         "Beta (自訂)": pd.Series(dtype="float")
     })
 
-# ---------------------------------------------------------
-# 2. 初始化 Session State (空白模板)
-# ---------------------------------------------------------
 if 'broker_1' not in st.session_state:
     st.session_state.broker_1 = get_empty_df()
-
 if 'broker_2' not in st.session_state:
     st.session_state.broker_2 = get_empty_df()
-
 if 'broker_3' not in st.session_state:
     st.session_state.broker_3 = get_empty_df()
 
 # ---------------------------------------------------------
-# 3. 側邊欄：存檔與讀檔區
+# 2. 側邊欄佈局：建立容器 (關鍵修改！)
 # ---------------------------------------------------------
 st.sidebar.header("💾 存檔與讀檔")
 st.sidebar.caption("請將設定檔下載至電腦以保存資料。")
 
-# --- 讀檔功能 (含自動刷新) ---
-uploaded_file = st.sidebar.file_uploader("📂 讀取舊檔案 (Upload CSV)", type=['csv'])
+# 【關鍵 1】先建立一個「空的容器」放在最上面，稍後再把下載按鈕放進來
+download_container = st.sidebar.container()
 
+# 讀檔功能
+uploaded_file = st.sidebar.file_uploader("📂 讀取舊檔案 (Upload CSV)", type=['csv'])
 if uploaded_file is not None:
     try:
-        # 讀取 CSV
         df_uploaded = pd.read_csv(uploaded_file)
-        
-        # 檢查是否有必要的欄位
         required_cols = ["Broker_ID", "代號", "股數", "平均成本", "Beta (自訂)"]
         if all(col in df_uploaded.columns for col in required_cols):
-            # 分配回各自的 DataFrame
             st.session_state.broker_1 = df_uploaded[df_uploaded['Broker_ID'] == 'A'][["代號", "股數", "平均成本", "Beta (自訂)"]].reset_index(drop=True)
             st.session_state.broker_2 = df_uploaded[df_uploaded['Broker_ID'] == 'B'][["代號", "股數", "平均成本", "Beta (自訂)"]].reset_index(drop=True)
             st.session_state.broker_3 = df_uploaded[df_uploaded['Broker_ID'] == 'C'][["代號", "股數", "平均成本", "Beta (自訂)"]].reset_index(drop=True)
-            
-            st.sidebar.success("✅ 讀檔成功！正在刷新圖表...")
-            # 強制刷新頁面，讓圖表立即顯示
+            st.sidebar.success("✅ 讀檔成功！正在刷新...")
             st.rerun()
         else:
-            st.sidebar.error("❌ 檔案格式錯誤，請使用本系統產出的 CSV。")
+            st.sidebar.error("❌ 檔案格式錯誤")
     except Exception as e:
         st.sidebar.error(f"讀取失敗: {e}")
 
-# --- 存檔功能 (含亂碼修復) ---
-def convert_df_to_csv():
-    b1 = st.session_state.broker_1.copy()
-    b1['Broker_ID'] = 'A'
-    
-    b2 = st.session_state.broker_2.copy()
-    b2['Broker_ID'] = 'B'
-    
-    b3 = st.session_state.broker_3.copy()
-    b3['Broker_ID'] = 'C'
-    
-    # 合併並過濾掉空行
-    full_df = pd.concat([b1, b2, b3], ignore_index=True)
-    full_df = full_df[full_df['代號'].notna() & (full_df['代號'] != "")]
-    
-    # 【關鍵修正】使用 'utf-8-sig' 編碼，解決 Excel 中文亂碼問題
-    return full_df.to_csv(index=False).encode('utf-8-sig')
-
-csv_data = convert_df_to_csv()
-
-st.sidebar.download_button(
-    label="💾 下載目前設定 (Save to CSV)",
-    data=csv_data,
-    file_name='my_portfolio_config.csv',
-    mime='text/csv',
-)
-
 st.sidebar.markdown("---")
+st.sidebar.header("📝 持倉編輯")
 
 # ---------------------------------------------------------
-# 4. 側邊欄：持倉編輯區
+# 3. 持倉編輯區 (先執行這裡，獲取最新數據)
 # ---------------------------------------------------------
 columns_config = {
     "代號": st.column_config.TextColumn(help="股票代碼"),
     "股數": st.column_config.NumberColumn(min_value=0, format="%.2f", default=0),
     "平均成本": st.column_config.NumberColumn(min_value=0, format="$%.2f", default=0),
-    "Beta (自訂)": st.column_config.NumberColumn(min_value=0.0, format="%.2f", help="若不填寫則自動抓取"),
+    "Beta (自訂)": st.column_config.NumberColumn(min_value=0.0, format="%.2f"),
 }
 
-st.sidebar.header("📝 持倉編輯")
-
 with st.sidebar.expander("📂 券商 A", expanded=True):
+    # 【關鍵 2】直接捕捉編輯後的 DataFrame (edited_b1)
     edited_b1 = st.data_editor(st.session_state.broker_1, num_rows="dynamic", column_config=columns_config, key="ed_b1", hide_index=True)
+    # 立即更新 Session State，確保資料同步
+    st.session_state.broker_1 = edited_b1
+
 with st.sidebar.expander("📂 券商 B"):
     edited_b2 = st.data_editor(st.session_state.broker_2, num_rows="dynamic", column_config=columns_config, key="ed_b2", hide_index=True)
+    st.session_state.broker_2 = edited_b2
+
 with st.sidebar.expander("📂 券商 C"):
     edited_b3 = st.data_editor(st.session_state.broker_3, num_rows="dynamic", column_config=columns_config, key="ed_b3", hide_index=True)
+    st.session_state.broker_3 = edited_b3
 
+# 🔄 更新按鈕
 if st.sidebar.button("🔄 更新分析結果"):
     st.rerun()
 
 # ---------------------------------------------------------
-# 5. 數據處理與繪圖
+# 4. 準備 CSV 並放入最上方的容器 (關鍵步驟！)
+# ---------------------------------------------------------
+def convert_df_to_csv(b1, b2, b3):
+    d1 = b1.copy(); d1['Broker_ID'] = 'A'
+    d2 = b2.copy(); d2['Broker_ID'] = 'B'
+    d3 = b3.copy(); d3['Broker_ID'] = 'C'
+    
+    full_df = pd.concat([d1, d2, d3], ignore_index=True)
+    # 過濾空行
+    full_df = full_df[full_df['代號'].notna() & (full_df['代號'] != "")]
+    # 編碼 utf-8-sig
+    return full_df.to_csv(index=False).encode('utf-8-sig')
+
+# 【關鍵 3】現在我們有了最新的 edited_b1, b2, b3，這時候產生的 CSV 才是最新的
+csv_data = convert_df_to_csv(edited_b1, edited_b2, edited_b3)
+
+# 【關鍵 4】使用 'with download_container' 把按鈕放回最上面
+with download_container:
+    st.download_button(
+        label="💾 下載目前設定 (Save to CSV)",
+        data=csv_data,
+        file_name='my_portfolio_config.csv',
+        mime='text/csv',
+    )
+
+# ---------------------------------------------------------
+# 5. 數據處理與繪圖 (維持不變)
 # ---------------------------------------------------------
 def fetch_risk_data(df_list):
     results = []
@@ -215,7 +212,7 @@ stock_data = fetch_risk_data(data_sources)
 if stock_data:
     raw_df = pd.DataFrame(stock_data)
     
-    # 聚合計算 (合併相同股票)
+    # 聚合計算
     grouped_df = raw_df.groupby(['Ticker', 'Sector'], as_index=False).agg({
         'MarketValue': 'sum',
         'RiskExposure': 'sum',
@@ -238,7 +235,6 @@ if stock_data:
     else:
         portfolio_beta = 0
 
-    # 上半部：儀表 + 圓餅 + 數據
     c1, c2, c3 = st.columns([1, 1.2, 1])
     
     with c1:
@@ -261,10 +257,8 @@ if stock_data:
 
     st.divider()
 
-    # 下半部：風險權重矩陣
     st.subheader("🔥 全局風險矩陣 (面積大小 = 風險當量)")
-    st.caption("矩陣圖顯示：方塊越 **大** 代表風險權重越高；越 **紅** 代表 Beta 波動越大。")
-
+    
     fig_tree = px.treemap(
         grouped_df,
         path=[px.Constant("我的投資組合"), 'Sector', 'Ticker'], 
@@ -291,15 +285,10 @@ if stock_data:
     st.plotly_chart(fig_tree, use_container_width=True)
 
 else:
-    # 歡迎畫面
-    st.info("👋 歡迎使用風險監控面板！請在左側側邊欄輸入資料，或讀取舊的 CSV 檔案。")
+    st.info("👋 歡迎使用風險監控面板！請在左側輸入資料。")
     st.markdown("""
-    **快速開始：**
-    1. 展開左側的 **📂 券商資料夾**。
-    2. 在表格中輸入 **代號** 與 **股數**。
-    3. 點擊 **🔄 更新分析結果**。
-    
-    **如何保存？**
-    *   使用左側上方的 **「💾 下載目前設定」** 可將資料存回電腦。
-    *   下次使用時，直接拖曳該檔案至 **「📂 讀取舊檔案」** 即可還原。
+    **資料保存指南：**
+    1. 在左側輸入您的持倉。
+    2. **重要：** 輸入完畢後，請點擊一下表格外的任意處，或按 **🔄 更新分析結果**。
+    3. 最後再點擊左上方的 **「💾 下載目前設定」**，此時下載的檔案就會包含您剛剛輸入的內容了！
     """)
